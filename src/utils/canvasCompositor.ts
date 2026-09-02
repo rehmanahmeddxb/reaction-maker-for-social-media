@@ -1,13 +1,12 @@
 import {
-  LayoutMode,
   CameraShape,
   AspectRatio,
   StudioSettings,
   FloatingReaction,
   VideoFilter,
-  MainFeedRole,
 } from '../types';
 import { TranscriptionSubtitle } from './transcriptionService';
+import { isVideoDrawable } from './videoLoader';
 
 export function getCanvasDimensions(aspectRatio: AspectRatio): { width: number; height: number } {
   switch (aspectRatio) {
@@ -98,9 +97,21 @@ export function drawCoverImage(
   dHeight: number,
   flipX: boolean = false
 ) {
-  const sWidth = (img as HTMLVideoElement).videoWidth || img.width || dWidth;
-  const sHeight = (img as HTMLVideoElement).videoHeight || img.height || dHeight;
+  let sWidth = 0;
+  let sHeight = 0;
+  if (img instanceof HTMLVideoElement) {
+    sWidth = img.videoWidth;
+    sHeight = img.videoHeight;
+  } else if (img instanceof HTMLImageElement) {
+    sWidth = img.naturalWidth || img.width;
+    sHeight = img.naturalHeight || img.height;
+  } else {
+    sWidth = img.width;
+    sHeight = img.height;
+  }
 
+  // Never draw a 0-size source (paused local files at t=0 often report 0 until a frame decodes).
+  // Falling back to dest size would call drawImage with an invalid source rect → black frame.
   if (sWidth === 0 || sHeight === 0) return;
 
   const targetRatio = dWidth / dHeight;
@@ -207,6 +218,7 @@ export function renderReactionFrame({
   sourceVideo,
   cameraVideo,
   fallbackAvatarCanvas,
+  sourcePoster,
   settings,
   floatingReactions,
   currentTimeFormatted,
@@ -217,6 +229,7 @@ export function renderReactionFrame({
   sourceVideo: HTMLVideoElement | null;
   cameraVideo: HTMLVideoElement | null;
   fallbackAvatarCanvas: HTMLCanvasElement | null;
+  sourcePoster?: HTMLImageElement | null;
   settings: StudioSettings;
   floatingReactions: FloatingReaction[];
   currentTimeFormatted?: string;
@@ -231,26 +244,26 @@ export function renderReactionFrame({
   ctx.fillRect(0, 0, W, H);
   ctx.restore();
 
-  // Determine which feed is camera and which is source video
-  // Accept camera if it has loaded frames, live readyState, or non-zero videoWidth
-  const rawCameraReady = !!(
-    cameraVideo &&
-    (cameraVideo.readyState >= 1 || (cameraVideo.videoWidth > 0 && cameraVideo.videoHeight > 0))
-  );
-  const cameraSource: HTMLVideoElement | HTMLCanvasElement | null =
+  // Camera: require an actual decoded frame, otherwise fall back to the avatar
+  const rawCameraReady = isVideoDrawable(cameraVideo);
+  const cameraSource: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement | null =
     rawCameraReady ? cameraVideo : fallbackAvatarCanvas;
 
-  // Source video is considered available if it has loaded metadata/frames and NOT hidden due to pause
-  const rawSourceReady = !!(
-    sourceVideo &&
-    (sourceVideo.readyState >= 1 || (sourceVideo.videoWidth > 0 && sourceVideo.videoHeight > 0))
-  );
-  const isSourceReady = rawSourceReady && !isSourceVideoHidden;
+  // Source video: metadata-only (readyState 1) still paints a black rectangle.
+  // Fall back to the file's thumbnail poster until a real frame exists.
+  const posterReady = !!(sourcePoster && sourcePoster.complete && sourcePoster.naturalWidth > 0);
+  const rawSourceReady = isVideoDrawable(sourceVideo);
+  const sourceMedia: HTMLVideoElement | HTMLImageElement | null = rawSourceReady
+    ? sourceVideo
+    : posterReady
+      ? sourcePoster!
+      : null;
+  const isSourceReady = !!sourceMedia && !isSourceVideoHidden;
 
   // Identify Main Fullscreen Feed vs PiP Feed based on settings.mainFeed
   const isCameraMain = settings.mainFeed === 'camera';
-  const mainFeedMedia = isCameraMain ? cameraSource : (isSourceReady ? sourceVideo : null);
-  const pipFeedMedia = isCameraMain ? (isSourceReady ? sourceVideo : null) : cameraSource;
+  const mainFeedMedia = isCameraMain ? cameraSource : isSourceReady ? sourceMedia : null;
+  const pipFeedMedia = isCameraMain ? (isSourceReady ? sourceMedia : null) : cameraSource;
   const isMainMirror = isCameraMain ? settings.mirrorCamera : false;
   const isPipMirror = isCameraMain ? false : settings.mirrorCamera;
 

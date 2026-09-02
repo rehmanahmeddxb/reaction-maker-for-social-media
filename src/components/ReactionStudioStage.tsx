@@ -107,6 +107,7 @@ export const ReactionStudioStage: React.FC<ReactionStudioStageProps> = ({
     if (!vid) return;
     if (vid.paused) {
       try {
+        vid.muted = false;
         await vid.play();
         setIsPreviewPlaying(true);
       } catch (e) {
@@ -117,6 +118,19 @@ export const ReactionStudioStage: React.FC<ReactionStudioStageProps> = ({
       setIsPreviewPlaying(false);
     }
   };
+
+  useEffect(() => {
+    const vid = sourceVideoRef.current;
+    if (!vid) return;
+    const onPlay = () => setIsPreviewPlaying(true);
+    const onPause = () => setIsPreviewPlaying(false);
+    vid.addEventListener('play', onPlay);
+    vid.addEventListener('pause', onPause);
+    return () => {
+      vid.removeEventListener('play', onPlay);
+      vid.removeEventListener('pause', onPause);
+    };
+  }, [selectedVideo]);
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -338,34 +352,6 @@ export const ReactionStudioStage: React.FC<ReactionStudioStageProps> = ({
       ref={containerRef}
       className="relative flex-1 flex flex-col items-center justify-center p-2 sm:p-4 bg-neutral-950/70 overflow-hidden"
     >
-      {/* Off-screen video elements actively decoding for the 60fps Canvas Compositor */}
-      {/* Note: NEVER use display:none because browsers suspend frame decoding for hidden elements! */}
-      <div
-        aria-hidden="true"
-        className="fixed pointer-events-none opacity-0 overflow-hidden"
-        style={{
-          top: -9999,
-          left: -9999,
-          width: 320,
-          height: 240,
-          zIndex: -999,
-        }}
-      >
-        <video
-          ref={sourceVideoRef}
-          playsInline
-          preload="auto"
-          style={{ width: 320, height: 240 }}
-        />
-        <video
-          ref={cameraVideoRef}
-          playsInline
-          autoPlay
-          muted
-          style={{ width: 320, height: 240 }}
-        />
-      </div>
-
       {/* Top Floating Stage Bar: Canvas Setup & PiP Quick Controls */}
       <div className="w-full max-w-4xl mb-2 px-2 flex flex-wrap items-center justify-between gap-2 z-20">
         {/* Left: Setup & Format Badges */}
@@ -544,10 +530,35 @@ export const ReactionStudioStage: React.FC<ReactionStudioStageProps> = ({
         ref={stageViewportRef}
         className={`relative w-full ${getAspectRatioStyle()} rounded-2xl overflow-hidden bg-black border border-neutral-800 shadow-2xl flex items-center justify-center group`}
       >
+        {/* Decoder layer MUST stay in-viewport with a real size. Browsers skip
+            decoding for display:none, opacity:0, and off-screen videos — which
+            made local files paint as a black rectangle on the canvas. */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 overflow-hidden pointer-events-none"
+          style={{ zIndex: 0 }}
+        >
+          <video
+            ref={sourceVideoRef}
+            playsInline
+            preload="auto"
+            disablePictureInPicture
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+          <video
+            ref={cameraVideoRef}
+            playsInline
+            autoPlay
+            muted
+            disablePictureInPicture
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+        </div>
+
         {/* The Live Composite High-Performance Canvas */}
         <canvas
           ref={canvasRef}
-          className="w-full h-full object-contain block select-none pointer-events-none"
+          className="relative z-10 w-full h-full object-contain block select-none pointer-events-none bg-black"
         />
 
         {/* Draggable & Scalable PiP Interactive Bounding Box (Active in PiP modes) */}

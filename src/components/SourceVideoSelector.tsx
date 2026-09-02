@@ -16,6 +16,12 @@ import {
 } from 'lucide-react';
 import { SourceVideo } from '../types';
 import { SAMPLE_VIDEOS } from '../utils/sampleVideos';
+import {
+  captureVideoThumbnail,
+  createObjectUrlForVideoFile,
+  mountDecoderVideo,
+  primeVideoFrame,
+} from '../utils/videoLoader';
 
 interface SourceVideoSelectorProps {
   isOpen: boolean;
@@ -41,9 +47,9 @@ export const SourceVideoSelector: React.FC<SourceVideoSelectorProps> = ({
 
   if (!isOpen) return null;
 
-  // Professional local file reader & metadata validator
+  // Local file reader: keep a real in-DOM decoder so the first frame isn't black.
   const processLocalVideoFile = async (file: File) => {
-    if (!file.type.startsWith('video/') && !file.name.match(/\.(mp4|webm|mov|mkv|avi)$/i)) {
+    if (!file.type.startsWith('video/') && !file.name.match(/\.(mp4|webm|mov|mkv|avi|m4v|ogg|ogv)$/i)) {
       setErrorMessage('Please upload a supported video file format (.mp4, .webm, .mov).');
       return;
     }
@@ -52,66 +58,47 @@ export const SourceVideoSelector: React.FC<SourceVideoSelectorProps> = ({
     setIsLoadingFile(true);
     setLoadingProgressStatus('Reading video file and extracting metadata...');
 
+    let objectUrl = '';
+    let video: HTMLVideoElement | null = null;
+
     try {
-      const objectUrl = URL.createObjectURL(file);
-      const video = document.createElement('video');
-      video.preload = 'auto';
-      video.playsInline = true;
-      video.muted = true;
+      objectUrl = await createObjectUrlForVideoFile(file);
+      video = mountDecoderVideo();
       video.src = objectUrl;
+      video.load();
 
-      await new Promise<{ width: number; height: number; duration: number }>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          // Timeout fallback in case canplaythrough takes long
-          resolve({
-            width: video.videoWidth || 1280,
-            height: video.videoHeight || 720,
-            duration: video.duration || 0,
-          });
-        }, 6000);
-
-        video.onloadedmetadata = () => {
-          setLoadingProgressStatus('Buffering audio/video streams for smooth playback...');
-          if (video.duration > 0) {
-            video.currentTime = Math.min(1.0, video.duration * 0.15);
-          }
+      await new Promise<void>((resolve, reject) => {
+        const timer = window.setTimeout(() => resolve(), 8000);
+        const onMeta = () => {
+          setLoadingProgressStatus('Decoding first frame so the clip is not a black screen...');
         };
-
-        video.onseeked = () => {
-          clearTimeout(timer);
-          resolve({
-            width: video.videoWidth,
-            height: video.videoHeight,
-            duration: video.duration,
-          });
+        const onReady = () => {
+          window.clearTimeout(timer);
+          video?.removeEventListener('loadedmetadata', onMeta);
+          video?.removeEventListener('loadeddata', onReady);
+          video?.removeEventListener('error', onErr);
+          resolve();
         };
-
-        video.onerror = () => {
-          clearTimeout(timer);
-          reject(new Error('Browser could not decode this video format. Try MP4 (H.264).'));
+        const onErr = () => {
+          window.clearTimeout(timer);
+          video?.removeEventListener('loadedmetadata', onMeta);
+          video?.removeEventListener('loadeddata', onReady);
+          reject(new Error('Browser could not decode this video format. Try MP4 (H.264) or WebM.'));
         };
-
-        video.load();
+        video!.addEventListener('loadedmetadata', onMeta);
+        video!.addEventListener('loadeddata', onReady, { once: true });
+        video!.addEventListener('error', onErr, { once: true });
       });
 
-      setLoadingProgressStatus('Generating high-resolution thumbnail preview...');
-
-      // Generate instant thumbnail
-      let thumbUrl = '';
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.min(720, video.videoWidth || 640);
-        canvas.height = Math.round(
-          canvas.width * ((video.videoHeight || 360) / (video.videoWidth || 640))
-        );
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          thumbUrl = canvas.toDataURL('image/jpeg', 0.85);
-        }
-      } catch (e) {
-        console.warn('Thumbnail generation skipped:', e);
+      if (video.videoWidth === 0 || video.videoHeight === 0) {
+        throw new Error('This file loaded without video frames. Re-export as H.264 MP4 and try again.');
       }
+
+      setLoadingProgressStatus('Buffering a visible preview frame...');
+      await primeVideoFrame(video, 'play');
+
+      setLoadingProgressStatus('Generating high-resolution thumbnail preview...');
+      const thumbUrl = captureVideoThumbnail(video);
 
       const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
       const width = video.videoWidth || 1280;
@@ -125,7 +112,7 @@ export const SourceVideoSelector: React.FC<SourceVideoSelectorProps> = ({
         title: file.name.replace(/\.[^/.]+$/, ''),
         category: 'Local Device Video',
         url: objectUrl,
-        duration: Math.round(video.duration || 0),
+        duration: Math.round(Number.isFinite(video.duration) ? video.duration : 0),
         thumbnail: thumbUrl,
         resolution: resBadge,
         fileSizeFormatted: `${sizeMB} MB`,
@@ -138,8 +125,24 @@ export const SourceVideoSelector: React.FC<SourceVideoSelectorProps> = ({
       onClose();
     } catch (err: any) {
       console.error('File load error:', err);
+      if (objectUrl) {
+        try {
+          URL.revokeObjectURL(objectUrl);
+        } catch {
+          // ignore
+        }
+      }
       setIsLoadingFile(false);
       setErrorMessage(err.message || 'Failed to read video file. Please check format.');
+    } finally {
+      if (video) {
+        try {
+          video.pause();
+          video.remove();
+        } catch {
+          // ignore
+        }
+      }
     }
   };
 

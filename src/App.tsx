@@ -13,6 +13,7 @@ import { audioEngine } from './utils/audioSynthesizer';
 import { FallbackAvatarRenderer } from './utils/fallbackAvatarGenerator';
 import { ReactionMediaRecorder } from './utils/mediaMixer';
 import { getCanvasDimensions, renderReactionFrame } from './utils/canvasCompositor';
+import { primeVideoFrame } from './utils/videoLoader';
 import { liveTranscription, TranscriptionSubtitle } from './utils/transcriptionService';
 import { Navbar } from './components/Navbar';
 import { ReactionStudioStage } from './components/ReactionStudioStage';
@@ -113,6 +114,8 @@ export default function App() {
   const animFrameRef = useRef<number | null>(null);
   const timerIntervalRef = useRef<number | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourcePosterRef = useRef<HTMLImageElement | null>(null);
+  const previousBlobUrlRef = useRef<string | null>(null);
 
   // High Performance Render Refs to prevent any frame drops or slow loops
   const settingsRef = useRef<StudioSettings>(settings);
@@ -151,42 +154,84 @@ export default function App() {
     };
   }, []);
 
+  // Keep a drawable poster so the PiP isn't a black box while the first frame decodes
+  useEffect(() => {
+    const thumb = selectedVideo?.thumbnail;
+    if (!thumb) {
+      sourcePosterRef.current = null;
+      return;
+    }
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = thumb;
+    img.onload = () => {
+      sourcePosterRef.current = img;
+    };
+    img.onerror = () => {
+      sourcePosterRef.current = null;
+    };
+    return () => {
+      img.onload = null;
+      img.onerror = null;
+    };
+  }, [selectedVideo]);
+
   // Sync Source Video URL to decoding video element
   useEffect(() => {
     const vid = sourceVideoRef.current;
-    if (vid && selectedVideo) {
-      vid.pause();
-      const url = selectedVideo.url;
+    if (!vid || !selectedVideo) return;
 
-      // CRITICAL: NEVER set crossorigin for blob: or data: URLs, otherwise browser blocks local files!
-      if (url.startsWith('blob:') || url.startsWith('data:') || url.startsWith('/')) {
-        vid.removeAttribute('crossorigin');
-      } else {
-        vid.setAttribute('crossorigin', 'anonymous');
-      }
+    let cancelled = false;
+    const url = selectedVideo.url;
 
-      vid.src = url;
-      vid.currentTime = 0;
-      vid.load();
+    vid.pause();
 
-      const primeFirstFrame = () => {
-        try {
-          if (vid.currentTime === 0 && vid.duration > 0) {
-            vid.currentTime = 0.001; // Decodes first frame into buffer so canvas renders immediately
-          }
-        } catch {
-          // ignore seek glitch
-        }
-      };
-
-      vid.addEventListener('loadeddata', primeFirstFrame, { once: true });
-      vid.addEventListener('loadedmetadata', primeFirstFrame, { once: true });
-
-      return () => {
-        vid.removeEventListener('loadeddata', primeFirstFrame);
-        vid.removeEventListener('loadedmetadata', primeFirstFrame);
-      };
+    // NEVER set crossorigin for blob:/data: URLs — that taints local files and paints black.
+    if (url.startsWith('blob:') || url.startsWith('data:') || url.startsWith('/')) {
+      vid.removeAttribute('crossorigin');
+    } else {
+      vid.setAttribute('crossorigin', 'anonymous');
     }
+
+    vid.playsInline = true;
+    vid.setAttribute('playsinline', 'true');
+    vid.setAttribute('webkit-playsinline', 'true');
+    vid.preload = 'auto';
+
+    // Do not assign currentTime before metadata; it throws in some browsers and skips load().
+    vid.src = url;
+    vid.load();
+
+    const onReady = () => {
+      if (cancelled) return;
+      void primeVideoFrame(vid, 'seek');
+    };
+
+    const onError = () => {
+      console.warn('Source video failed to decode', vid.error);
+    };
+
+    vid.addEventListener('loadeddata', onReady, { once: true });
+    vid.addEventListener('canplay', onReady, { once: true });
+    vid.addEventListener('error', onError, { once: true });
+
+    if (url.startsWith('blob:')) {
+      if (previousBlobUrlRef.current && previousBlobUrlRef.current !== url) {
+        try {
+          URL.revokeObjectURL(previousBlobUrlRef.current);
+        } catch {
+          // ignore
+        }
+      }
+      previousBlobUrlRef.current = url;
+    }
+
+    return () => {
+      cancelled = true;
+      vid.removeEventListener('loadeddata', onReady);
+      vid.removeEventListener('canplay', onReady);
+      vid.removeEventListener('error', onError);
+    };
   }, [selectedVideo]);
 
   // Adjust source video volume
@@ -434,6 +479,7 @@ export default function App() {
           sourceVideo: sourceVideoRef.current,
           cameraVideo: cameraVideoRef.current,
           fallbackAvatarCanvas: fallbackAvatarRef.current?.getCanvas() || null,
+          sourcePoster: sourcePosterRef.current,
           settings: currentSettings,
           floatingReactions: floatingReactionsRef.current,
           currentTimeFormatted: timerStr,
@@ -518,6 +564,7 @@ export default function App() {
 
         // Synchronously Play Source Video from beginning
         if (sourceVideoRef.current) {
+          sourceVideoRef.current.muted = false;
           sourceVideoRef.current.currentTime = 0;
           try {
             await sourceVideoRef.current.play();
@@ -716,9 +763,6 @@ export default function App() {
         selectedVideo={selectedVideo}
         onSelectVideo={(v) => {
           setSelectedVideo(v);
-          if (sourceVideoRef.current) {
-            sourceVideoRef.current.currentTime = 0;
-          }
         }}
       />
 
