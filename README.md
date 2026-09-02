@@ -8,6 +8,10 @@ This contains everything you need to run your app locally.
 
 View your app in AI Studio: https://ai.studio/apps/1e424b49-696b-4258-8943-c49163cb28fe
 
+## Agent & Contributor Policy
+
+> **Policy Directive:** On **every request or task**, contributors and AI agents must **first read all markdown documentation files** (`README.md`, `TERMUX.md`, `AGENTS.md`, `POLICY.md`) before planning, processing, or modifying code. See **[AGENTS.md](AGENTS.md)** and **[POLICY.md](POLICY.md)** for complete specifications.
+
 ## Run Locally
 
 **Prerequisites:**  Node.js
