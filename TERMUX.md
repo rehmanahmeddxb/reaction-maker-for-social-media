@@ -1,4 +1,4 @@
-# Running Remix Reaction Video Maker on Termux (Android)
+# Running Reaction Video Maker on Termux (Android)
 
 This app is a **Vite + React frontend served by a small Express server on port 3000**
 (`npm run dev` → `tsx server.ts`). It works fine on Android/Termux: Termux runs the
@@ -17,21 +17,24 @@ server, and the Android browser (Chrome) is the "screen" where you open it.
 ## 0. TL;DR (copy–paste)
 
 ```bash
-pkg update && pkg upgrade -y
-pkg install nodejs git -y          # Node 20/22 (check: node -v)
-termux-setup-storage               # optional: lets you grab videos from /sdcard
+pkg update && pkg install nodejs git -y   # install git + node only (skip full upgrade)
+termux-setup-storage                       # optional: lets you grab videos from /sdcard
 
 cd ~
 git clone https://github.com/rehmanahmeddxb/reaction-maker-for-social-media.git
 cd reaction-maker-for-social-media
 
-npm install                        # ~190 MB, a few minutes
-
 # optional: Gemini key for AI subtitles / viral titles (app runs without it, with fallbacks)
 cp .env.example .env.local && nano .env.local
 
-ALLOW_ALL_HOSTS=true npm run dev   # or just: npm run dev
+# one command for EVERY update & run — pulls latest code, installs deps only
+# when needed, then starts the server light on CPU/battery:
+bash termux.sh
 ```
+
+> `termux.sh` is the whole point of this guide: after the first clone you never have to
+> re-clone or run `npm install` every time. See **§ 2b. The one-command update** below
+> for exactly how it works and the really short command.
 
 Then open **Chrome on the same phone → `http://localhost:3000`** and allow camera + mic.
 
@@ -40,11 +43,14 @@ Then open **Chrome on the same phone → `http://localhost:3000`** and allow cam
 ## 1. One-time Termux setup
 
 ```bash
-pkg update && pkg upgrade -y
-pkg install nodejs git -y
+pkg update && pkg install nodejs git -y   # skip `pkg upgrade` — it's slow and not needed
 node -v     # needs v18+; Termux ships v20/v22 → fine
 npm -v
 ```
+
+> Only run a full `pkg upgrade` if you want to update ALL installed packages (it can take
+> a while and use a lot of data). For this app, `pkg update` + installing `nodejs git`
+> is enough and is much lighter.
 
 Useful extras:
 
@@ -74,13 +80,74 @@ media in/out if needed.
 
 ---
 
+## 2b. The one-command update (use this every time)
+
+After the first clone, you never need to `git clone` again or run `npm install` by hand.
+The repo ships a small script, **`termux.sh`**, that does everything:
+
+```bash
+bash termux.sh
+```
+
+(Or, once, `chmod +x termux.sh` so you can just type `./termux.sh`.)
+
+What it does, in this order:
+
+1. **Clones the repo once** if it's not there yet (first run only).
+2. **Pulls the latest code from GitHub** fast — a clean `git reset --hard` to the default
+   branch, so it always looks like a fresh clone. Your `node_modules` and `.env.local`
+   are kept (they're untracked files), so they're **not** re-downloaded.
+3. **Runs `npm install` only when `package.json` changed.** It stores a fingerprint
+   (`package.json` + a small `.deps-hash` marker); if the dependency list is the same,
+   it skips the slow install step entirely. So most updates just swap in the new code.
+4. **Starts the server** with the phone-friendly defaults already set:
+   `ALLOW_ALL_HOSTS=true`, `DISABLE_HMR=true` (no hot-reload → less CPU/battery), and
+   `VITE_USE_POLLING=true` (avoids the Android `ENOSPC` file-watcher crash).
+
+Optional overrides (set them *before* running):
+
+```bash
+HMR=true POLLING=false PORT=3001 bash termux.sh   # hot-reload on / polling off / other port
+```
+
+> ⚠️ One thing to know: `git reset --hard` means the folder always matches the GitHub
+> repo exactly. Any **tracked** file you edited by hand (e.g. `src/App.tsx`) will be
+> reset to the GitHub version. Your **untracked** files (`node_modules`, `.env.local`)
+> are safe and kept. So if you customize code locally, keep it in `.env.local` via an env
+> var, or skip the script and use a plain `git pull` (see § 3) so your tweaks aren't wiped.
+
+The very first time `termux.sh` will still install dependencies (that's unavoidable), but
+you only pay that cost **once**. After that, every update is a fast `git pull` + reload,
+and `npm install` only re-runs when `package.json` changed.
+
+**Want an even faster install?** The repo ships a `bun.lock`, so `bun install` is much
+faster than `npm install` on a phone. Optional (adds one extra package):
+
+```bash
+pkg install bun -y          # one-time, optional
+# then make termux.sh use bun for the install line
+```
+
+---
+
 ## 3. Install dependencies
+
+Normally you never run this by hand — `termux.sh` does it only when needed:
 
 ```bash
 npm install
 ```
 
 (`bun.lock` is in the repo, so `bun install` works too if you have bun.)
+
+**Manual update (no script):** if you'd rather not use `termux.sh`, a plain
+`git pull` is the fastest way to get new code without re-cloning:
+
+```bash
+git pull
+# if package.json changed, run: npm install
+ALLOW_ALL_HOSTS=true npm run dev
+```
 
 ---
 

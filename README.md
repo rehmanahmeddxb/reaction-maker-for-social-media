@@ -34,7 +34,22 @@ Open `http://localhost:3000`. Useful environment variables while developing:
 Full step-by-step guide (installing Node, where to clone, how to open it in the phone
 browser, and how to get camera/mic access) → **[TERMUX.md](TERMUX.md)**.
 
-Short version:
+**Minimal / low-battery workflow (recommended).** Install Node + Git once, clone once,
+then use the included `termux.sh` for everything after — it pulls the latest code fast
+and only re-runs `npm install` when the dependencies actually changed:
+
+```bash
+pkg update && pkg install nodejs git -y       # install git + node only (skip full upgrade)
+cd ~ && git clone https://github.com/rehmanahmeddxb/reaction-maker-for-social-media.git
+cd reaction-maker-for-social-media
+
+bash termux.sh        # every time you want the latest code → pulls + installs-if-needed + runs
+```
+
+`termux.sh` starts the server with `ALLOW_ALL_HOSTS=true`, disables HMR, and uses polling
+so it runs light on the phone and doesn't crash on Android's tiny inotify limit.
+
+Old manual way (still works):
 
 ```bash
 pkg update && pkg upgrade -y && pkg install nodejs git -y

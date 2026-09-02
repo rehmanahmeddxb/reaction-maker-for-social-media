@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# termux.sh update fingerprint
+.deps-hash
