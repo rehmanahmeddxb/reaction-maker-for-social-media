@@ -48,16 +48,29 @@ export class ReactionMediaRecorder {
       }
     }
 
-    // 3. Connect Source Video audio if accessible
-    if (options.sourceVideo && !this.sourceAudioNode) {
+    // 3. Connect Source Video audio if accessible.
+    //    createMediaElementSource() can only ever be called ONCE per element,
+    //    so the node is cached — but it must be re-pointed at the new
+    //    destination every take, otherwise take #2 onwards records no clip
+    //    audio at all.
+    if (options.sourceVideo) {
       try {
-        // Attempt to capture video element audio
-        this.sourceAudioNode = ctx.createMediaElementSource(options.sourceVideo);
-        this.sourceGainNode = ctx.createGain();
+        if (!this.sourceAudioNode) {
+          this.sourceAudioNode = ctx.createMediaElementSource(options.sourceVideo);
+        }
+        if (!this.sourceGainNode) {
+          this.sourceGainNode = ctx.createGain();
+          this.sourceAudioNode.connect(this.sourceGainNode);
+          // Keep the creator hearing the clip through their speakers.
+          this.sourceGainNode.connect(ctx.destination);
+        }
         this.sourceGainNode.gain.setValueAtTime(options.sourceVolume, ctx.currentTime);
-        this.sourceAudioNode.connect(this.sourceGainNode);
+        try {
+          this.sourceGainNode.disconnect(this.mixedDestination);
+        } catch {
+          /* not connected yet */
+        }
         this.sourceGainNode.connect(this.mixedDestination);
-        this.sourceGainNode.connect(ctx.destination);
       } catch (e) {
         console.warn('Source video AudioNode capture CORS fallback:', e);
       }
@@ -65,7 +78,23 @@ export class ReactionMediaRecorder {
 
     // 4. Capture Canvas stream (at 30 or 60 fps)
     const fps = options.fps || 30;
-    const canvasStream = options.canvas.captureStream(fps);
+
+    // A tainted canvas throws here — that is the difference between "export is
+    // black" and a clear message. Surface it instead of recording nothing.
+    let canvasStream: MediaStream;
+    try {
+      canvasStream = options.canvas.captureStream(fps);
+    } catch (e: any) {
+      throw new Error(
+        'The preview canvas is tainted by a cross-origin video, so it cannot be recorded. ' +
+          'Upload the clip as a local file or use the URL tab (it routes through the studio proxy). ' +
+          `(${e?.message || e})`
+      );
+    }
+
+    if (canvasStream.getVideoTracks().length === 0) {
+      throw new Error('Canvas produced no video track — recording aborted.');
+    }
 
     // 5. Combine Canvas Video Track + Mixed Audio Track(s)
     const combinedStream = new MediaStream();

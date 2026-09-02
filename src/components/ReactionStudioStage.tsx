@@ -58,6 +58,8 @@ interface ReactionStudioStageProps {
   cameraError?: string | null;
   onStartCamera?: () => void;
   onSwitchCameraFacing?: () => void;
+  sourceStatus?: { painting: boolean; message: string; detail: string };
+  onForceDecode?: () => void;
 }
 
 export const ReactionStudioStage: React.FC<ReactionStudioStageProps> = ({
@@ -84,10 +86,18 @@ export const ReactionStudioStage: React.FC<ReactionStudioStageProps> = ({
   cameraError = null,
   onStartCamera,
   onSwitchCameraFacing,
+  sourceStatus,
+  onForceDecode,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageViewportRef = useRef<HTMLDivElement>(null);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+  const [monitorsCollapsed, setMonitorsCollapsed] = useState(false);
+
+  // NOTE: collapsed tiles are deliberately still on-screen and fully opaque.
+  // A 0px / 0-opacity / display:none video is not guaranteed to decode frames.
+  const expandedTileStyle: React.CSSProperties = { width: 96, height: 54 };
+  const collapsedTileStyle: React.CSSProperties = { width: 24, height: 14 };
 
   // Edit Mode state (active by default when not recording)
   const [internalEditMode, setInternalEditMode] = useState(true);
@@ -102,16 +112,29 @@ export const ReactionStudioStage: React.FC<ReactionStudioStageProps> = ({
   };
 
   // Preview play/pause for rehearsal
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const toggleSourcePreview = async () => {
     const vid = sourceVideoRef.current;
     if (!vid) return;
     if (vid.paused) {
+      setPreviewError(null);
       try {
-        vid.muted = false;
+        // Start muted (always permitted) then unmute — an unmuted play() is
+        // rejected outright by mobile browsers and used to fail silently.
+        vid.muted = true;
         await vid.play();
+        vid.muted = false;
         setIsPreviewPlaying(true);
-      } catch (e) {
+      } catch (e: any) {
         console.warn('Source preview play error:', e);
+        try {
+          vid.muted = true;
+          await vid.play();
+          setIsPreviewPlaying(true);
+          setPreviewError('Playing muted — tap again to enable clip audio.');
+        } catch (inner: any) {
+          setPreviewError(inner?.message || 'Browser blocked playback of this clip.');
+        }
       }
     } else {
       vid.pause();
@@ -530,29 +553,76 @@ export const ReactionStudioStage: React.FC<ReactionStudioStageProps> = ({
         ref={stageViewportRef}
         className={`relative w-full ${getAspectRatioStyle()} rounded-2xl overflow-hidden bg-black border border-neutral-800 shadow-2xl flex items-center justify-center group`}
       >
-        {/* Decoder layer MUST stay in-viewport with a real size. Browsers skip
-            decoding for display:none, opacity:0, and off-screen videos — which
-            made local files paint as a black rectangle on the canvas. */}
+        {/* ------------------------------------------------------------------
+            LIVE DECODER MONITORS
+
+            These two <video> elements are the ONLY thing the canvas can copy
+            pixels from. Browsers (mobile Chrome + Safari especially) skip
+            presenting frames for elements that are display:none, opacity:0,
+            zero-sized *or fully occluded by an opaque element*. The previous
+            build stacked them underneath an opaque <canvas>, so on phones the
+            source video decoded audio but never handed over a picture — the
+            canvas painted a black rectangle and the export was black too.
+
+            They are now rendered on top of the canvas as small, genuinely
+            visible monitors. Collapsing keeps them visible at a tiny size
+            (never 0px / 0 opacity) so decoding is guaranteed to continue.
+        ------------------------------------------------------------------ */}
         <div
-          aria-hidden="true"
-          className="absolute inset-0 overflow-hidden pointer-events-none"
-          style={{ zIndex: 0 }}
+          className="absolute bottom-2 left-2 z-30 flex items-end gap-2 pointer-events-none"
+          style={{ maxWidth: '60%' }}
         >
-          <video
-            ref={sourceVideoRef}
-            playsInline
-            preload="auto"
-            disablePictureInPicture
-            className="absolute inset-0 w-full h-full object-cover"
-          />
-          <video
-            ref={cameraVideoRef}
-            playsInline
-            autoPlay
-            muted
-            disablePictureInPicture
-            className="absolute inset-0 w-full h-full object-cover"
-          />
+          <div className="flex flex-col gap-1 pointer-events-auto">
+            <div
+              className="relative rounded-lg overflow-hidden border border-white/25 bg-black shadow-lg"
+              style={monitorsCollapsed ? collapsedTileStyle : expandedTileStyle}
+            >
+              <video
+                ref={sourceVideoRef}
+                playsInline
+                preload="auto"
+                disablePictureInPicture
+                className="w-full h-full object-cover block"
+              />
+              {!monitorsCollapsed && (
+                <span className="absolute bottom-0 left-0 right-0 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide bg-black/75 text-indigo-300 text-center">
+                  Clip
+                </span>
+              )}
+            </div>
+
+            <div
+              className="relative rounded-lg overflow-hidden border border-white/25 bg-black shadow-lg"
+              style={monitorsCollapsed ? collapsedTileStyle : expandedTileStyle}
+            >
+              <video
+                ref={cameraVideoRef}
+                playsInline
+                autoPlay
+                muted
+                disablePictureInPicture
+                className="w-full h-full object-cover block"
+              />
+              {!monitorsCollapsed && (
+                <span className="absolute bottom-0 left-0 right-0 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide bg-black/75 text-rose-300 text-center">
+                  Cam
+                </span>
+              )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setMonitorsCollapsed((v) => !v)}
+            className="pointer-events-auto px-1.5 py-1 rounded-md bg-black/75 hover:bg-black text-[9px] font-bold text-neutral-300 border border-white/15 transition cursor-pointer"
+            title={
+              monitorsCollapsed
+                ? 'Show decoder monitors (they must stay on screen for the canvas to receive frames)'
+                : 'Shrink decoder monitors'
+            }
+          >
+            {monitorsCollapsed ? 'MON' : 'HIDE'}
+          </button>
         </div>
 
         {/* The Live Composite High-Performance Canvas */}
@@ -822,9 +892,35 @@ export const ReactionStudioStage: React.FC<ReactionStudioStageProps> = ({
           </div>
         )}
 
-        {/* Camera Offline Warning / Prompt (When camera stream is not live) */}
-        {!isRecording && !cameraActive && onStartCamera && (
-          <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-neutral-900/95 border border-amber-500/40 text-xs shadow-xl backdrop-blur-md">
+        {/* Source video decode diagnostics — tells the user exactly why a clip
+            is black instead of silently showing a poster image. */}
+        {selectedVideo && sourceStatus && !sourceStatus.painting && !isCountingDown && (
+          <div className="absolute bottom-3 right-14 z-30 max-w-[55%] flex items-start gap-2 px-3 py-2 rounded-xl bg-neutral-950/95 border border-amber-500/50 shadow-xl backdrop-blur-md">
+            <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold text-amber-200 leading-tight">
+                {sourceStatus.message}
+              </p>
+              <p className="text-[9px] font-mono text-neutral-400 truncate">{sourceStatus.detail}</p>
+              {previewError && (
+                <p className="text-[9px] text-rose-300 mt-0.5">{previewError}</p>
+              )}
+              {onForceDecode && (
+                <button
+                  type="button"
+                  onClick={onForceDecode}
+                  className="mt-1.5 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] transition cursor-pointer"
+                >
+                  <RefreshCw className="w-2.5 h-2.5" />
+                  <span>Force decode frame</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Camera Offline Warning / Prompt (When camera stream is not live) */}        {!isRecording && !cameraActive && onStartCamera && (
+          <div className="absolute top-20 left-3 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-neutral-900/95 border border-amber-500/40 text-xs shadow-xl backdrop-blur-md">
             <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             <span className="text-amber-200 text-[11px]">
               {cameraError ? cameraError : 'Webcam Offline'}

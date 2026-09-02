@@ -6,7 +6,7 @@ export const SAMPLE_VIDEOS: SourceVideo[] = [
     title: 'Bunny & Flying Flying Apple Comedy',
     category: 'Funny / Comedy',
     description: 'Animated high-energy funny slapstick comedy scene with unexpected flying fruits.',
-    url: `/api/proxy-video?url=${encodeURIComponent('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4')}`,
+    url: `/api/proxy-video?url=${encodeURIComponent('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4')}`,
     thumbnail: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=400&q=80',
   },
   {
@@ -14,7 +14,7 @@ export const SAMPLE_VIDEOS: SourceVideo[] = [
     title: 'Mind-Blowing Cyberpunk Machine Stunt',
     category: 'Epic / Sci-Fi',
     description: 'Surreal mechanical world animation with high-tension unexpected events.',
-    url: `/api/proxy-video?url=${encodeURIComponent('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4')}`,
+    url: `/api/proxy-video?url=${encodeURIComponent('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4')}`,
     thumbnail: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=400&q=80',
   },
   {
@@ -38,7 +38,7 @@ export const SAMPLE_VIDEOS: SourceVideo[] = [
     title: 'Sci-Fi Robot Combat & Magic Climax',
     category: 'Sci-Fi / VFX',
     description: 'Giant robot face-off with laser barriers and jaw-dropping CGI effects.',
-    url: `/api/proxy-video?url=${encodeURIComponent('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4')}`,
+    url: `/api/proxy-video?url=${encodeURIComponent('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4')}`,
     thumbnail: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=400&q=80',
   },
   {
@@ -46,7 +46,7 @@ export const SAMPLE_VIDEOS: SourceVideo[] = [
     title: 'Supercar Drifting & Speed Reaction',
     category: 'Cars / Racing',
     description: 'Roaring engine sound and tire smoke rally drift around sharp hairpins.',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4',
+    url: `/api/proxy-video?url=${encodeURIComponent('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4')}`,
     thumbnail: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=400&q=80',
   }
 ];

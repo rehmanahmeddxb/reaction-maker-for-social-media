@@ -224,6 +224,7 @@ export function renderReactionFrame({
   currentTimeFormatted,
   activeSubtitle,
   isSourceVideoHidden = false,
+  sourceStatusText,
 }: {
   ctx: CanvasRenderingContext2D;
   sourceVideo: HTMLVideoElement | null;
@@ -235,6 +236,7 @@ export function renderReactionFrame({
   currentTimeFormatted?: string;
   activeSubtitle?: TranscriptionSubtitle | null;
   isSourceVideoHidden?: boolean;
+  sourceStatusText?: string;
 }) {
   const { width: W, height: H } = ctx.canvas;
 
@@ -258,6 +260,10 @@ export function renderReactionFrame({
     : posterReady
       ? sourcePoster!
       : null;
+  // True when what we are showing for the "source video" is only a still
+  // poster. The old build silently swapped in the poster, which made sample
+  // clips look like they were playing while the real <video> never decoded.
+  const usingPosterStandIn = !rawSourceReady && posterReady && !isSourceVideoHidden;
   const isSourceReady = !!sourceMedia && !isSourceVideoHidden;
 
   // Identify Main Fullscreen Feed vs PiP Feed based on settings.mainFeed
@@ -427,6 +433,18 @@ export function renderReactionFrame({
     ctx.filter = 'none';
   }
   ctx.restore();
+
+  // Honest status badge over the source-video region. Without this a still
+  // poster (or a black frame) is indistinguishable from a working preview,
+  // which is exactly how "it looks fine but exports black" happens.
+  if (usingPosterStandIn || (!rawSourceReady && !posterReady && !isSourceVideoHidden)) {
+    const region = getSourceRegionRect(settings, W, H);
+    drawStatusPill(
+      ctx,
+      region,
+      sourceStatusText || (usingPosterStandIn ? 'Thumbnail only — video not decoded yet' : 'No video frame')
+    );
+  }
 
   // Overlay Header Banner / Title Card if configured
   if (settings.overlayTitle && settings.overlayTitle.trim().length > 0) {
@@ -646,5 +664,80 @@ function renderPlaceholder(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, x + w / 2, y + h / 2);
+  ctx.restore();
+}
+
+/**
+ * Where the source-video feed lives on the canvas for the current layout.
+ * Used to place the "why is this not showing" status badge.
+ */
+export function getSourceRegionRect(
+  settings: StudioSettings,
+  W: number,
+  H: number
+): PipRect {
+  const isCameraMain = settings.mainFeed === 'camera';
+
+  switch (settings.layout) {
+    case 'split-side-by-side':
+      return isCameraMain
+        ? { x: W / 2, y: 0, width: W / 2, height: H }
+        : { x: 0, y: 0, width: W / 2, height: H };
+    case 'split-top-bottom':
+      return isCameraMain
+        ? { x: 0, y: H / 2, width: W, height: H / 2 }
+        : { x: 0, y: 0, width: W, height: H / 2 };
+    case 'stacked-shorts': {
+      const splitY = H * 0.48;
+      return isCameraMain
+        ? { x: 0, y: splitY + 4, width: W, height: H - splitY - 4 }
+        : { x: 0, y: 0, width: W, height: splitY };
+    }
+    default:
+      return isCameraMain
+        ? calculatePipRect(settings, W, H)
+        : { x: 0, y: 0, width: W, height: H };
+  }
+}
+
+/** Small amber pill centred in `rect` explaining the source video state. */
+function drawStatusPill(ctx: CanvasRenderingContext2D, rect: PipRect, text: string) {
+  if (!text || rect.width < 80 || rect.height < 40) return;
+
+  ctx.save();
+  const fontSize = Math.max(13, Math.min(26, Math.round(rect.width * 0.045)));
+  ctx.font = `600 ${fontSize}px "Plus Jakarta Sans", sans-serif`;
+
+  const maxW = rect.width * 0.9;
+  let label = text;
+  while (ctx.measureText(label).width > maxW - 32 && label.length > 8) {
+    label = label.slice(0, -2);
+  }
+  if (label !== text) label = `${label}…`;
+
+  const padX = fontSize * 0.8;
+  const padY = fontSize * 0.5;
+  const textW = ctx.measureText(label).width;
+  const boxW = Math.min(maxW, textW + padX * 2);
+  const boxH = fontSize + padY * 2;
+  const boxX = rect.x + (rect.width - boxW) / 2;
+  const boxY = rect.y + rect.height - boxH - Math.min(24, rect.height * 0.06);
+
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.85)';
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(boxX, boxY, boxW, boxH, boxH / 2);
+  } else {
+    ctx.rect(boxX, boxY, boxW, boxH);
+  }
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(251, 191, 36, 0.75)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = '#fbbf24';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, boxX + boxW / 2, boxY + boxH / 2 + 1);
   ctx.restore();
 }

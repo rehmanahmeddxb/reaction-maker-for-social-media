@@ -95,10 +95,19 @@ export const SourceVideoSelector: React.FC<SourceVideoSelectorProps> = ({
       }
 
       setLoadingProgressStatus('Buffering a visible preview frame...');
-      await primeVideoFrame(video, 'play');
+      const probe = await primeVideoFrame(video, 'play');
 
       setLoadingProgressStatus('Generating high-resolution thumbnail preview...');
+      // Only keep a poster we can actually see. A black poster used to be
+      // installed here, which made the stage look "loaded" while the real
+      // <video> was never decoding — and the export came out black.
       const thumbUrl = captureVideoThumbnail(video);
+
+      if (!probe.drawn) {
+        throw new Error(
+          'This browser decoded the file but refused to hand over pixels. Re-export as H.264 MP4 (or WebM/VP9) and try again.'
+        );
+      }
 
       const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
       const width = video.videoWidth || 1280;
