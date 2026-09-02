@@ -1,10 +1,17 @@
 import express from 'express';
 import path from 'path';
+import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 
+// Load env files (`.env.local` wins over `.env`) so keys can also live in a
+// file instead of being exported in the shell.
+dotenv.config({ path: '.env.local' });
+dotenv.config();
+
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -197,8 +204,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Reaction Studio server running on http://0.0.0.0:${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`Reaction Studio server running on http://${HOST}:${PORT}`);
   });
 }
 

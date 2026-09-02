@@ -18,3 +18,30 @@ View your app in AI Studio: https://ai.studio/apps/1e424b49-696b-4258-8943-c4916
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+Open `http://localhost:3000`. Useful environment variables while developing:
+
+| Env var | Effect |
+| --- | --- |
+| `PORT=3001` | use a different port (default `3000`) |
+| `ALLOWED_HOSTS="a.com,192.168.1.20"` | let those hostnames load the Vite dev server (LAN / tunnel) |
+| `ALLOW_ALL_HOSTS=true` | allow any hostname |
+| `VITE_USE_POLLING=true` | file watching via polling (low inotify limits) |
+| `DISABLE_HMR=true` | disable HMR + file watching |
+
+## Run on Android / Termux
+
+Full step-by-step guide (installing Node, where to clone, how to open it in the phone
+browser, and how to get camera/mic access) → **[TERMUX.md](TERMUX.md)**.
+
+Short version:
+
+```bash
+pkg update && pkg upgrade -y && pkg install nodejs git -y
+cd ~ && git clone https://github.com/rehmanahmeddxb/reaction-maker-for-social-media.git
+cd reaction-maker-for-social-media && npm install
+ALLOW_ALL_HOSTS=true npm run dev
+```
+
+Then open `http://localhost:3000` in the phone's Chrome. Camera and microphone only work
+over a secure context — `localhost` or real HTTPS (tunnel), not `http://LAN-IP:3000`.
