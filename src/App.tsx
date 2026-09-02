@@ -13,7 +13,14 @@ import { audioEngine } from './utils/audioSynthesizer';
 import { FallbackAvatarRenderer } from './utils/fallbackAvatarGenerator';
 import { ReactionMediaRecorder } from './utils/mediaMixer';
 import { getCanvasDimensions, renderReactionFrame } from './utils/canvasCompositor';
-import { primeVideoFrame } from './utils/videoLoader';
+import {
+  primeVideoFrame,
+  probeVideoFrame,
+  describeVideoState,
+  unlockVideoPlayback,
+  isVideoDrawable,
+  FrameProbeResult,
+} from './utils/videoLoader';
 import { liveTranscription, TranscriptionSubtitle } from './utils/transcriptionService';
 import { Navbar } from './components/Navbar';
 import { ReactionStudioStage } from './components/ReactionStudioStage';
@@ -116,6 +123,20 @@ export default function App() {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourcePosterRef = useRef<HTMLImageElement | null>(null);
   const previousBlobUrlRef = useRef<string | null>(null);
+  const mediaUnlockedRef = useRef<boolean>(false);
+  const lastProbeAtRef = useRef<number>(0);
+  const sourceStatusRef = useRef<{ painting: boolean; message: string; detail: string }>({
+    painting: false,
+    message: 'Waiting for video…',
+    detail: '',
+  });
+
+  // Live source-video decode diagnostics surfaced in the UI.
+  const [sourceStatus, setSourceStatus] = useState<{
+    painting: boolean;
+    message: string;
+    detail: string;
+  }>({ painting: false, message: 'Waiting for video…', detail: '' });
 
   // High Performance Render Refs to prevent any frame drops or slow loops
   const settingsRef = useRef<StudioSettings>(settings);
@@ -184,9 +205,26 @@ export default function App() {
     let cancelled = false;
     const url = selectedVideo.url;
 
+    // Revoke the *previous* clip's blob URL only once we are switching away
+    // from it. Revoking the URL that is still assigned to the element is a
+    // classic cause of a permanently black <video>.
+    const priorBlob = previousBlobUrlRef.current;
+    if (priorBlob && priorBlob !== url) {
+      try {
+        URL.revokeObjectURL(priorBlob);
+      } catch {
+        // ignore
+      }
+      previousBlobUrlRef.current = null;
+    }
+    if (url.startsWith('blob:')) {
+      previousBlobUrlRef.current = url;
+    }
+
     vid.pause();
 
-    // NEVER set crossorigin for blob:/data: URLs — that taints local files and paints black.
+    // NEVER set crossorigin for blob:/data:/same-origin URLs — that taints
+    // local files (and can block decoding entirely on some builds).
     if (url.startsWith('blob:') || url.startsWith('data:') || url.startsWith('/')) {
       vid.removeAttribute('crossorigin');
     } else {
@@ -197,42 +235,92 @@ export default function App() {
     vid.setAttribute('playsinline', 'true');
     vid.setAttribute('webkit-playsinline', 'true');
     vid.preload = 'auto';
+    vid.loop = false;
 
-    // Do not assign currentTime before metadata; it throws in some browsers and skips load().
+    setSourceStatus({ painting: false, message: 'Loading clip…', detail: url.slice(0, 64) });
+
+    // Do not assign currentTime before metadata; it throws in some browsers.
     vid.src = url;
     vid.load();
 
+    let primed = false;
+    const primeOnce = async (mode: 'play' | 'seek') => {
+      if (cancelled || primed) return;
+      primed = true;
+      const probe = await primeVideoFrame(vid, mode);
+      if (cancelled) return;
+      if (!probe.visible) {
+        // Allow a later event (canplaythrough) to try again.
+        primed = false;
+      }
+    };
+
     const onReady = () => {
       if (cancelled) return;
-      void primeVideoFrame(vid, 'seek');
+      // Once the user has interacted at least once we are allowed to use the
+      // much more reliable muted play/pause priming path.
+      void primeOnce(mediaUnlockedRef.current ? 'play' : 'seek');
     };
 
     const onError = () => {
+      if (cancelled) return;
       console.warn('Source video failed to decode', vid.error);
+      setSourceStatus({
+        painting: false,
+        message: describeVideoState(vid),
+        detail: `code=${vid.error?.code ?? '?'} ${selectedVideo.title}`,
+      });
     };
 
-    vid.addEventListener('loadeddata', onReady, { once: true });
-    vid.addEventListener('canplay', onReady, { once: true });
-    vid.addEventListener('error', onError, { once: true });
-
-    if (url.startsWith('blob:')) {
-      if (previousBlobUrlRef.current && previousBlobUrlRef.current !== url) {
-        try {
-          URL.revokeObjectURL(previousBlobUrlRef.current);
-        } catch {
-          // ignore
-        }
-      }
-      previousBlobUrlRef.current = url;
-    }
+    vid.addEventListener('loadeddata', onReady);
+    vid.addEventListener('canplay', onReady);
+    vid.addEventListener('canplaythrough', onReady);
+    vid.addEventListener('error', onError);
 
     return () => {
       cancelled = true;
       vid.removeEventListener('loadeddata', onReady);
       vid.removeEventListener('canplay', onReady);
+      vid.removeEventListener('canplaythrough', onReady);
       vid.removeEventListener('error', onError);
     };
   }, [selectedVideo]);
+
+  // One-time media unlock. Mobile Chrome/Safari will not present frames for a
+  // media element that has never been played inside a user gesture, which is
+  // the difference between "preview works on desktop" and "black on my phone".
+  useEffect(() => {
+    const unlock = () => {
+      if (mediaUnlockedRef.current) return;
+      mediaUnlockedRef.current = true;
+      audioEngine.init();
+      void unlockVideoPlayback(sourceVideoRef.current);
+      void sourceVideoRef.current?.play().then(
+        () => sourceVideoRef.current?.pause(),
+        () => undefined
+      );
+    };
+    const opts = { capture: true } as AddEventListenerOptions;
+    window.addEventListener('pointerdown', unlock, opts);
+    window.addEventListener('touchstart', unlock, opts);
+    window.addEventListener('keydown', unlock, opts);
+    return () => {
+      window.removeEventListener('pointerdown', unlock, opts);
+      window.removeEventListener('touchstart', unlock, opts);
+      window.removeEventListener('keydown', unlock, opts);
+    };
+  }, []);
+
+  // Manual escape hatch wired to the "Force decode frame" button.
+  const forceDecodeSourceFrame = useCallback(async () => {
+    const vid = sourceVideoRef.current;
+    if (!vid) return;
+    mediaUnlockedRef.current = true;
+    setSourceStatus({ painting: false, message: 'Forcing decode…', detail: '' });
+    if (vid.readyState < 1) vid.load();
+    await unlockVideoPlayback(vid);
+    await primeVideoFrame(vid, 'play');
+  }, []);
 
   // Adjust source video volume
   useEffect(() => {
@@ -474,6 +562,28 @@ export default function App() {
         // When paused and autoHideVideoOnPause is enabled, hide the local source video automatically
         const shouldHideSource = isPausedRef.current && currentSettings.autoHideVideoOnPause;
 
+        // Throttled decode probe (4x/sec). This is what turns "mystery black
+        // rectangle" into an actionable message, and it costs a 16x16 readback.
+        const now = Date.now();
+        if (now - lastProbeAtRef.current > 250) {
+          lastProbeAtRef.current = now;
+          const vid = sourceVideoRef.current;
+          const probe: FrameProbeResult = probeVideoFrame(vid);
+          const drawable = isVideoDrawable(vid);
+          // Playing content is trusted even on a legitimately black scene —
+          // we only report "not painting" when nothing is being handed over.
+          const painting = drawable && probe.drawn && (probe.visible || !!vid && !vid.paused);
+          const message = painting ? 'Painting' : describeVideoState(vid, probe);
+          const detail = vid
+            ? `rs=${vid.readyState} ${vid.videoWidth}x${vid.videoHeight} t=${vid.currentTime.toFixed(2)} luma=${probe.luma.toFixed(1)}`
+            : 'no element';
+          const prev = sourceStatusRef.current;
+          if (prev.painting !== painting || prev.message !== message || prev.detail !== detail) {
+            sourceStatusRef.current = { painting, message, detail };
+            setSourceStatus({ painting, message, detail });
+          }
+        }
+
         renderReactionFrame({
           ctx,
           sourceVideo: sourceVideoRef.current,
@@ -485,6 +595,9 @@ export default function App() {
           currentTimeFormatted: timerStr,
           activeSubtitle: currentSettings.autoTranscribe ? activeSubtitleRef.current : null,
           isSourceVideoHidden: shouldHideSource,
+          sourceStatusText: sourceStatusRef.current.painting
+            ? undefined
+            : sourceStatusRef.current.message,
         });
       }
     }
@@ -544,6 +657,24 @@ export default function App() {
   // Start Recording with 3-2-1 Countdown
   const handleStartRecording = async () => {
     if (!canvasRef.current) return;
+
+    // CRITICAL: unlock + prime the source video *inside* the click gesture.
+    // The old build called play() three seconds later from a setInterval
+    // callback, by which point the user-activation had lapsed on mobile — the
+    // clip stayed frozen on a black first frame for the whole recording.
+    mediaUnlockedRef.current = true;
+    const srcVid = sourceVideoRef.current;
+    if (srcVid) {
+      try {
+        srcVid.muted = true;
+        await srcVid.play();
+        srcVid.pause();
+        srcVid.currentTime = 0;
+      } catch (e) {
+        console.warn('Source video could not be unlocked for recording:', e);
+      }
+    }
+
     setIsCountingDown(true);
     setCountdownValue(3);
     audioEngine.playSound('ding', 0.5);
@@ -564,25 +695,45 @@ export default function App() {
 
         // Synchronously Play Source Video from beginning
         if (sourceVideoRef.current) {
-          sourceVideoRef.current.muted = false;
-          sourceVideoRef.current.currentTime = 0;
+          const v = sourceVideoRef.current;
+          v.currentTime = 0;
           try {
-            await sourceVideoRef.current.play();
+            // Start muted (always allowed), then unmute — a rejected play()
+            // here is what leaves the recording stuck on a black frame.
+            v.muted = true;
+            await v.play();
+            v.muted = false;
+            v.volume = settingsRef.current.sourceVolume;
           } catch (e) {
             console.warn('Source video play error:', e);
+            setSourceStatus({
+              painting: false,
+              message: 'Browser blocked clip playback — tap the stage then retry',
+              detail: String((e as any)?.name || e),
+            });
           }
         }
 
         // Start Composite MediaRecorder
         if (recorderRef.current && canvasRef.current) {
-          await recorderRef.current.startRecording({
-            canvas: canvasRef.current,
-            sourceVideo: sourceVideoRef.current,
-            micStream: micActive ? micStream : null,
-            sourceVolume: settings.sourceVolume,
-            micVolume: settings.micVolume,
-            fps: 30,
-          });
+          try {
+            await recorderRef.current.startRecording({
+              canvas: canvasRef.current,
+              sourceVideo: sourceVideoRef.current,
+              micStream: micActive ? micStream : null,
+              sourceVolume: settings.sourceVolume,
+              micVolume: settings.micVolume,
+              fps: 30,
+            });
+          } catch (err: any) {
+            console.error('Recorder start failed:', err);
+            setIsRecording(false);
+            setSourceStatus({
+              painting: false,
+              message: err?.message || 'Recording could not start',
+              detail: 'MediaRecorder',
+            });
+          }
         }
       }
     }, 1000);
@@ -719,6 +870,8 @@ export default function App() {
           cameraError={cameraError}
           onStartCamera={() => startCamera()}
           onSwitchCameraFacing={switchCameraFacing}
+          sourceStatus={sourceStatus}
+          onForceDecode={forceDecodeSourceFrame}
         />
 
         {/* Bottom Studio Controls & Transport */}

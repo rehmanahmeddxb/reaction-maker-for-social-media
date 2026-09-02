@@ -3,6 +3,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
+import { proxyVideoHandler } from './server/proxyVideoHandler';
 
 // Load env files (`.env.local` wins over `.env`) so keys can also live in a
 // file instead of being exported in the shell.
@@ -150,43 +151,7 @@ Return ONLY the raw JSON object, no markdown codeblocks or other text.`;
 });
 
 // 4. Safe CORS Video Proxy (prevents Canvas tainting on external URLs)
-app.get('/api/proxy-video', async (req, res) => {
-  const targetUrl = req.query.url as string;
-  if (!targetUrl || (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://'))) {
-    return res.status(400).send('Valid http/https URL required');
-  }
-
-  try {
-    const upstreamRes = await fetch(targetUrl);
-    if (!upstreamRes.ok) {
-      return res.status(upstreamRes.status).send('Failed to fetch upstream media');
-    }
-
-    const contentType = upstreamRes.headers.get('content-type') || 'video/mp4';
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
-
-    if (upstreamRes.body) {
-      const reader = upstreamRes.body.getReader();
-      const pump = async () => {
-        const { done, value } = await reader.read();
-        if (done) {
-          res.end();
-          return;
-        }
-        res.write(Buffer.from(value));
-        await pump();
-      };
-      await pump();
-    } else {
-      res.end();
-    }
-  } catch (err: any) {
-    console.warn('Proxy video error:', err.message);
-    res.status(500).send('Error proxying media');
-  }
-});
+app.get('/api/proxy-video', proxyVideoHandler);
 
 // 5. Mount Vite middleware for dev or static files for production
 async function startServer() {

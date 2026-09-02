@@ -2,7 +2,7 @@
 
 export class FallbackAvatarRenderer {
   private canvas: HTMLCanvasElement;
-  private ctx: CanvasRenderingContext2D;
+  private ctx: CanvasRenderingContext2D | null;
   private animationFrameId: number | null = null;
   private isRunning: boolean = false;
   private audioLevel: number = 0;
@@ -11,7 +11,9 @@ export class FallbackAvatarRenderer {
     this.canvas = document.createElement('canvas');
     this.canvas.width = 640;
     this.canvas.height = 480;
-    this.ctx = this.canvas.getContext('2d')!;
+    // Never assert here: a null 2D context (memory pressure, some embedded
+    // webviews) used to take the whole studio down with a white screen.
+    this.ctx = this.canvas.getContext('2d');
   }
 
   public getCanvas(): HTMLCanvasElement {
@@ -23,7 +25,7 @@ export class FallbackAvatarRenderer {
   }
 
   public start() {
-    if (this.isRunning) return;
+    if (this.isRunning || !this.ctx) return;
     this.isRunning = true;
     this.renderLoop();
   }
@@ -44,6 +46,7 @@ export class FallbackAvatarRenderer {
 
   private drawFrame() {
     const ctx = this.ctx;
+    if (!ctx) return;
     const w = this.canvas.width;
     const h = this.canvas.height;
     const time = Date.now() / 1000;
