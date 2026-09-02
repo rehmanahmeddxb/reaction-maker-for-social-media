@@ -14,9 +14,12 @@ const extraHosts = (process.env.ALLOWED_HOSTS || '')
   .map((host) => host.trim())
   .filter(Boolean);
 
-const allowedHosts: string[] | true | undefined = extraHosts.length > 0
-  ? extraHosts
-  : (process.env.ALLOW_ALL_HOSTS === 'true' ? true : undefined);
+const allowedHosts: string[] | true | undefined =
+  process.env.ALLOW_ALL_HOSTS === 'true'
+    ? true
+    : extraHosts.length > 0
+    ? [...extraHosts, '.e2b.app']
+    : ['.e2b.app', 'localhost', '127.0.0.1'];
 
 // Android/Termux (and some containers) ship a very low inotify watch limit,
 // which makes Vite crash with ENOSPC. Opt into polling there.

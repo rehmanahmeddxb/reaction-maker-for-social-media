@@ -122,11 +122,55 @@ else
   echo "==> Dependencies unchanged — skipping npm install ✅ (fast!)"
 fi
 
-# ---------- 4. Run ----------
-echo "==> Starting Reaction Studio on http://localhost:3000"
+# ---------- 4. Free port & stop stale server instances ----------
+TARGET_PORT="${PORT:-3000}"
+
+# Stop any previous server instance that may still be running in the background
+pkill -f "tsx server.ts" 2>/dev/null || true
+pkill -f "node.*server.ts" 2>/dev/null || true
+pkill -f "vite" 2>/dev/null || true
+
+# Helper to check if a port is in use
+check_port_in_use() {
+  local p="$1"
+  node -e "
+    const net = require('net');
+    const s = net.createServer();
+    s.once('error', (err) => { process.exit(err.code === 'EADDRINUSE' ? 10 : 0); });
+    s.once('listening', () => { s.close(); process.exit(0); });
+    s.listen(Number(${p}), '0.0.0.0');
+  " 2>/dev/null || return $?
+  return 0
+}
+
+port_status=0
+check_port_in_use "${TARGET_PORT}" || port_status=$?
+
+if [ "${port_status}" -eq 10 ]; then
+  echo "==> Port ${TARGET_PORT} is in use — stopping previous process..."
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k "${TARGET_PORT}/tcp" 2>/dev/null || true
+    fuser -k "24678/tcp" 2>/dev/null || true
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -ti ":${TARGET_PORT}" 2>/dev/null | xargs kill -9 2>/dev/null || true
+    lsof -ti :24678 2>/dev/null | xargs kill -9 2>/dev/null || true
+  fi
+  if command -v ss >/dev/null 2>&1; then
+    stale_pid="$(ss -lptn "sport = :${TARGET_PORT}" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 || true)"
+    if [ -n "${stale_pid}" ]; then
+      kill -9 ${stale_pid} 2>/dev/null || true
+    fi
+  fi
+  sleep 1
+fi
+
+# ---------- 5. Run ----------
+echo "==> Starting Reaction Studio on http://localhost:${TARGET_PORT}"
 echo "    Keep this running. Use: termux-wake-lock   (or tmux) so it stays alive."
 run_args=( "ALLOW_ALL_HOSTS=${ALLOW_ALL}" )
 if [ "${POLLING}" = "true" ]; then run_args+=( "VITE_USE_POLLING=true" ); fi
 if [ "${HMR}" != "true" ]; then run_args+=( "DISABLE_HMR=true" ); fi
+if [ -n "${PORT:-}" ]; then run_args+=( "PORT=${PORT}" ); fi
 
 env "${run_args[@]}" npm run dev

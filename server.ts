@@ -190,9 +190,16 @@ app.get('/api/proxy-video', async (req, res) => {
 
 // 5. Mount Vite middleware for dev or static files for production
 async function startServer() {
+  const http = await import('http');
+  const server = http.createServer(app);
+
   if (process.env.NODE_ENV !== 'production') {
+    const isHmrDisabled = process.env.DISABLE_HMR === 'true';
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: isHmrDisabled ? false : { server },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -204,9 +211,31 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, HOST, () => {
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n❌ Error: Port ${PORT} is already in use by another process.`);
+      console.error(`   To free port ${PORT}, run:`);
+      console.error(`     pkill -f "tsx server.ts" || pkill -f "node.*server"`);
+      console.error(`   Or run on a different port:`);
+      console.error(`     PORT=${PORT + 1} bash termux.sh (or PORT=${PORT + 1} npm run dev)\n`);
+      process.exit(1);
+    } else {
+      console.error('Server error:', err);
+      process.exit(1);
+    }
+  });
+
+  server.listen(PORT, HOST, () => {
     console.log(`Reaction Studio server running on http://${HOST}:${PORT}`);
   });
+
+  const shutdown = () => {
+    server.close(() => {
+      process.exit(0);
+    });
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 startServer();

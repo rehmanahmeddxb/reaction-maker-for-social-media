@@ -103,7 +103,9 @@ What it does, in this order:
    entirely, so most updates just swap in the new code. **If an install fails**
    (e.g. after an interrupted install), it repairs the npm cache, removes the broken
    `node_modules`/`package-lock.json`, and retries once automatically.
-4. **Starts the server** with the phone-friendly defaults already set:
+4. **Frees port 3000 and stops stale server instances** from previous runs so
+   re-running `bash termux.sh` never crashes with `EADDRINUSE` or Vite WebSocket port collisions.
+5. **Starts the server** with the phone-friendly defaults already set:
    `ALLOW_ALL_HOSTS=true`, `DISABLE_HMR=true` (no hot-reload → less CPU/battery), and
    `VITE_USE_POLLING=true` (avoids the Android `ENOSPC` file-watcher crash).
 
@@ -310,7 +312,7 @@ be whitelisted. `vite.config.ts` now reads:
 | --- | --- |
 | `ENOSPC: System limit for number of file watchers reached` | `VITE_USE_POLLING=true npm run dev` or `DISABLE_HMR=true npm run dev` (Android's inotify limit is tiny) |
 | `Blocked request. This host is not allowed.` | Start with `ALLOW_ALL_HOSTS=true` or `ALLOWED_HOSTS="<your-host>"` |
-| `EADDRINUSE: port 3000` | `PORT=3001 npm run dev` |
+| `EADDRINUSE: port 3000` or `WebSocket server error: Port 24678 is already in use` | `bash termux.sh` (now auto-clears stale instances) or `pkill -f "tsx server.ts"` or `PORT=3001 bash termux.sh` |
 | Server dies when you switch apps / screen off | `termux-wake-lock`, disable battery optimization, or run inside `tmux` |
 | Camera/mic prompt never appears, or "Permission denied" | You're on plain HTTP from a non-localhost host → use Option A, C, or D (or Chrome's insecure-origin flag) |
 | Blank page / fonts look wrong | Needs internet on first load (Google Fonts in `index.html`) |
@@ -349,3 +351,12 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/   # → 200
 
 If both return as shown, the server is healthy and any problem is browser-side
 (permissions / hostname), not the app.
+
+---
+
+## 9. Contributor & Agent Policy
+
+All AI agents and contributors modifying this repository must follow the
+**Documentation-First Policy**: on every request or prompt, first read all markdown
+documentation (`README.md`, `TERMUX.md`, `AGENTS.md`, `POLICY.md`) before analyzing or
+modifying code. See **[AGENTS.md](AGENTS.md)** for detailed operating procedures.

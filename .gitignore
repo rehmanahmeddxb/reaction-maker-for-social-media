@@ -9,3 +9,4 @@ coverage/
 
 # termux.sh update fingerprint
 .deps-hash
+package-lock.json
