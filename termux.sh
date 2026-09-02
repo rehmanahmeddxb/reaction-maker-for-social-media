@@ -10,6 +10,9 @@
 #       are kept, because they are untracked files.
 #    3. Runs `npm install` ONLY when package.json changed — so on most
 #       updates it skips the slow install step entirely and just reloads.
+#       If an install fails (e.g. after an interrupted install left a damaged
+#       node_modules / npm cache), it repairs the state and retries once
+#       automatically.
 #    4. Starts the dev server with the friendly Termux defaults:
 #       ALLOW_ALL_HOSTS=true + no HMR (saves CPU & battery, avoids the
 #       Android inotify "ENOSPC" crash).
@@ -75,10 +78,45 @@ git reset --hard "origin/${DEFAULT_BRANCH}"
 deps_hash="$(sha256sum package.json | cut -d' ' -f1)"
 old_hash="$(cat "${HASH_FILE}" 2>/dev/null || true)"
 
-if [ ! -d node_modules ] || [ "${deps_hash}" != "${old_hash}" ]; then
-  echo "==> package.json changed (or node_modules missing) — installing deps…"
-  echo "    (this is the one slow step; it only runs when needed)"
+# A damaged node_modules tree can make npm 11+ fail with a confusing
+# ERESOLVE error like "Found: vite@undefined" — even though the versions in
+# package.json are compatible. It usually means a previous install was
+# interrupted (screen off, low storage, ...), so we detect it and repair.
+install_deps() {
   npm install --no-audit --no-fund --loglevel=error
+}
+
+needs_install=false
+if [ ! -d node_modules ]; then
+  needs_install=true
+elif [ "${deps_hash}" != "${old_hash}" ]; then
+  needs_install=true
+elif [ ! -s node_modules/vite/package.json ] || \
+     ! node -e "const p=require('./node_modules/vite/package.json'); if(!p.version) process.exit(1)" >/dev/null 2>&1; then
+  # package.json says deps are unchanged, but vite's own package.json is
+  # missing/empty (corrupt install) — reinstall instead of crashing at boot.
+  needs_install=true
+fi
+
+if [ "${needs_install}" = "true" ]; then
+  echo "==> package.json changed (or node_modules missing/corrupt) — installing deps…"
+  echo "    (this is the one slow step; it only runs when needed)"
+  if ! install_deps; then
+    echo ""
+    echo "==> npm install failed — repairing and retrying with a clean install…"
+    echo "    (a previous install was probably interrupted; this clears the damaged"
+    echo "     state and re-downloads the dependencies — usually fixes it)"
+    npm cache verify >/dev/null 2>&1 || true
+    rm -rf node_modules package-lock.json
+    if ! install_deps; then
+      echo ""
+      echo "!! npm install failed twice. Use the stronger cache wipe:"
+      echo "   npm cache clean --force && rm -rf node_modules package-lock.json"
+      echo "   bash termux.sh"
+      echo "   (details in the Troubleshooting section of TERMUX.md)"
+      exit 1
+    fi
+  fi
   echo "${deps_hash}" > "${HASH_FILE}"
 else
   echo "==> Dependencies unchanged — skipping npm install ✅ (fast!)"
