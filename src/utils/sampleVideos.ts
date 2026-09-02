@@ -6,7 +6,7 @@ export const SAMPLE_VIDEOS: SourceVideo[] = [
     title: 'Bunny & Flying Flying Apple Comedy',
     category: 'Funny / Comedy',
     description: 'Animated high-energy funny slapstick comedy scene with unexpected flying fruits.',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    url: `/api/proxy-video?url=${encodeURIComponent('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4')}`,
     thumbnail: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=400&q=80',
   },
   {
@@ -14,7 +14,7 @@ export const SAMPLE_VIDEOS: SourceVideo[] = [
     title: 'Mind-Blowing Cyberpunk Machine Stunt',
     category: 'Epic / Sci-Fi',
     description: 'Surreal mechanical world animation with high-tension unexpected events.',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    url: `/api/proxy-video?url=${encodeURIComponent('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4')}`,
     thumbnail: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=400&q=80',
   },
   {
@@ -22,7 +22,7 @@ export const SAMPLE_VIDEOS: SourceVideo[] = [
     title: 'Extreme Mountain Bike Downhill Jump',
     category: 'Action / Stunts',
     description: 'Fast-paced downhill bike jump cliff stunt that will make you gasp.',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    url: `/api/proxy-video?url=${encodeURIComponent('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4')}`,
     thumbnail: 'https://images.unsplash.com/photo-1517649763962-0c623266ddc0?w=400&q=80',
   },
   {
@@ -30,7 +30,7 @@ export const SAMPLE_VIDEOS: SourceVideo[] = [
     title: 'Astonishing Drone Canyon Fly-Through',
     category: 'Nature / Awe',
     description: 'Breathtaking high-speed canyon flyover with incredible lighting and sudden turns.',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    url: `/api/proxy-video?url=${encodeURIComponent('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4')}`,
     thumbnail: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=400&q=80',
   },
   {
@@ -38,7 +38,7 @@ export const SAMPLE_VIDEOS: SourceVideo[] = [
     title: 'Sci-Fi Robot Combat & Magic Climax',
     category: 'Sci-Fi / VFX',
     description: 'Giant robot face-off with laser barriers and jaw-dropping CGI effects.',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
+    url: `/api/proxy-video?url=${encodeURIComponent('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4')}`,
     thumbnail: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=400&q=80',
   },
   {
