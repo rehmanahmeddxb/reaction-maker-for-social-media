@@ -97,9 +97,12 @@ What it does, in this order:
 2. **Pulls the latest code from GitHub** fast — a clean `git reset --hard` to the default
    branch, so it always looks like a fresh clone. Your `node_modules` and `.env.local`
    are kept (they're untracked files), so they're **not** re-downloaded.
-3. **Runs `npm install` only when `package.json` changed.** It stores a fingerprint
-   (`package.json` + a small `.deps-hash` marker); if the dependency list is the same,
-   it skips the slow install step entirely. So most updates just swap in the new code.
+3. **Runs `npm install` only when `package.json` changed** (or `node_modules` is
+   missing/corrupt). It stores a fingerprint (`package.json` + a small `.deps-hash`
+   marker); if the dependency list is the same, it skips the slow install step
+   entirely, so most updates just swap in the new code. **If an install fails**
+   (e.g. after an interrupted install), it repairs the npm cache, removes the broken
+   `node_modules`/`package-lock.json`, and retries once automatically.
 4. **Starts the server** with the phone-friendly defaults already set:
    `ALLOW_ALL_HOSTS=true`, `DISABLE_HMR=true` (no hot-reload → less CPU/battery), and
    `VITE_USE_POLLING=true` (avoids the Android `ENOSPC` file-watcher crash).
@@ -139,6 +142,33 @@ npm install
 ```
 
 (`bun.lock` is in the repo, so `bun install` works too if you have bun.)
+
+### If `npm install` fails with `ERESOLVE` / `Found: vite@undefined`
+
+That error almost always means a **previous install was interrupted** (screen off,
+low storage, Termux killed mid-install, ...) and left a damaged `node_modules` or
+npm cache. The `package.json` versions in this repo are compatible — this is not a
+real dependency conflict, so **don't** use `--force` or `--legacy-peer-deps`.
+
+Fix it with a clean install:
+
+```bash
+npm cache verify                  # repair the npm cache (fast, local)
+rm -rf node_modules package-lock.json
+npm install                       # fresh install
+bash termux.sh                    # start as usual
+```
+
+`termux.sh` now does exactly this automatically: if `npm install` fails once, it
+repairs the cache, removes the broken `node_modules`/`package-lock.json` and retries
+— so in most cases you can just run `bash termux.sh` again and it heals itself.
+If it still fails, use the stronger cache wipe (re-downloads everything, slower):
+
+```bash
+npm cache clean --force
+rm -rf node_modules package-lock.json
+bash termux.sh
+```
 
 **Manual update (no script):** if you'd rather not use `termux.sh`, a plain
 `git pull` is the fastest way to get new code without re-cloning:
@@ -285,7 +315,7 @@ be whitelisted. `vite.config.ts` now reads:
 | Camera/mic prompt never appears, or "Permission denied" | You're on plain HTTP from a non-localhost host → use Option A, C, or D (or Chrome's insecure-origin flag) |
 | Blank page / fonts look wrong | Needs internet on first load (Google Fonts in `index.html`) |
 | Sluggish recording | Phone CPU: use shorter clips and smaller canvas presets; close other apps |
-| `npm install` slow / interrupted | `npm cache clean --force && rm -rf node_modules && npm install` |
+| `npm install` slow / interrupted, or `ERESOLVE` with `Found: vite@undefined` | `npm cache verify && rm -rf node_modules package-lock.json && bash termux.sh` (use `npm cache clean --force` if the verify isn't enough) |
 
 ---
 
