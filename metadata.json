@@ -1,0 +1,11 @@
+{
+  "name": "Remix Reaction Video Maker",
+  "description": "Create, record, and export synchronized picture-in-picture reaction videos with custom layouts, soundboard effects, and audio mixing.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
