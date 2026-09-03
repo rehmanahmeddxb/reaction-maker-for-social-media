@@ -1,66 +1,73 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Reaction Video Maker
 
-# Run and deploy your AI Studio app
+A React + Vite application for recording reaction videos with camera/microphone input, canvas compositing, and video export.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/1e424b49-696b-4258-8943-c49163cb28fe
+- Camera and microphone recording on Android/Termux
+- Video clip compositing onto canvas with PiP (Picture-in-Picture) layout
+- Real-time audio level visualization
+- Auto-transcription with Gemini AI (optional)
+- Viral title and hook generation (optional)
+- Take history and export to webm format
+- Multiple layout modes (pip-bottom-right, pip-top-left, split-screen, stacked-shorts)
 
-## Agent & Contributor Policy
-
-> **Policy Directive:** On **every request or task**, contributors and AI agents must **first read all markdown documentation files** (`README.md`, `TERMUX.md`, `AGENTS.md`, `POLICY.md`) before planning, processing, or modifying code. See **[AGENTS.md](AGENTS.md)** and **[POLICY.md](POLICY.md)** for complete specifications.
-
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
-
-Open `http://localhost:3000`. Useful environment variables while developing:
-
-| Env var | Effect |
-| --- | --- |
-| `PORT=3001` | use a different port (default `3000`) |
-| `ALLOWED_HOSTS="a.com,192.168.1.20"` | let those hostnames load the Vite dev server (LAN / tunnel) |
-| `ALLOW_ALL_HOSTS=true` | allow any hostname |
-| `VITE_USE_POLLING=true` | file watching via polling (low inotify limits) |
-| `DISABLE_HMR=true` | disable HMR + file watching |
-
-## Run on Android / Termux
-
-Full step-by-step guide (installing Node, where to clone, how to open it in the phone
-browser, and how to get camera/mic access) → **[TERMUX.md](TERMUX.md)**.
-
-**Minimal / low-battery workflow (recommended).** Install Node + Git once, clone once,
-then use the included `termux.sh` for everything after — it pulls the latest code fast
-and only re-runs `npm install` when the dependencies actually changed:
+## Running Locally
 
 ```bash
-pkg update && pkg install nodejs git -y       # install git + node only (skip full upgrade)
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000` in your browser. Camera/mic access will be prompted.
+
+## Running on Android/Termux
+
+Full step-by-step guide → **[TERMUX.md](TERMUX.md)**.
+
+### Minimal workflow
+
+```bash
+pkg update && pkg install nodejs git -y
 cd ~ && git clone https://github.com/rehmanahmeddxb/reaction-maker-for-social-media.git
 cd reaction-maker-for-social-media
-
-bash termux.sh        # every time you want the latest code → pulls + installs-if-needed + runs
+npm install
+PORT=3000 npm run dev
+# Open http://localhost:3000 in phone's Chrome. Allow camera + mic.
 ```
 
-`termux.sh` starts the server with `ALLOW_ALL_HOSTS=true`, disables HMR, and uses polling
-so it runs light on the phone and doesn't crash on Android's tiny inotify limit.
-
-Old manual way (still works):
+### Using the one-command update script
 
 ```bash
-pkg update && pkg upgrade -y && pkg install nodejs git -y
-cd ~ && git clone https://github.com/rehmanahmeddxb/reaction-maker-for-social-media.git
-cd reaction-maker-for-social-media && npm install
-ALLOW_ALL_HOSTS=true npm run dev
+bash termux.sh   # after first clone — pulls latest code, installs deps if needed, then starts server
 ```
 
-Then open `http://localhost:3000` in the phone's Chrome. Camera and microphone only work
-over a secure context — `localhost` or real HTTPS (tunnel), not `http://LAN-IP:3000`.
+## Video Recording
+
+1. Select a video clip or use the camera feed
+2. Click **Start Recording** — a 3-second countdown begins
+3. The app records canvas composition + microphone audio for up to 30 seconds
+4. Click **Stop** to finish and export as a webm file
+
+Camera/mic only works over a secure context: `localhost`, real HTTPS (Cloudflare tunnel), or `adb reverse`.
+
+## Environment Variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PORT` | `3000` | HTTP port for the Express/Vite server |
+| `ALLOW_ALL_HOSTS` | `false` | Bypasses Vite host validation for mobile/tunnel access (`true` enables) |
+| `VITE_USE_POLLING` | `false` | Enables polling file watcher to avoid Android `ENOSPC` inotify limits |
+| `DISABLE_HMR` | `false` | Disables HMR to save CPU and avoid port 24678 collisions |
+| `GEMINI_API_KEY` | `` | Optional Google Gemini API key for AI features |
+
+## Build for Production
+
+```bash
+npm run build
+```
+
+Then serve the static files:
+```bash
+NODE_ENV=production PORT=3000 npm start
+```
