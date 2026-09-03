@@ -1,12 +1,10 @@
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
 
 export default defineConfig({
-  plugins: [react()],
   server: {
     host: true,
     hmr: false,
     watch: { usePolling: true },
-    allowedHosts: 'auto',
+    allowedHosts: true,
   },
 })

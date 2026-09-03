@@ -8,7 +8,6 @@
     "allowJs": true,
     "strict": true,
     "esModuleInterop": true,
-    "downlevelIteration": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
@@ -19,10 +18,7 @@
     "declarationMap": true,
     "sourceMap": true,
     "rootDirs": [".", "./src"],
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./src/*"]
-    }
+    "allowImportingTsExtensions": true
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
 }

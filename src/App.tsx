@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { v4 as uuidv4 } from 'uuid';
 
 export interface SourceVideo {
   id: string;
@@ -24,18 +23,8 @@ export interface StudioSettings {
 }
 
 const SAMPLE_VIDEOS: SourceVideo[] = [
-  {
-    id: '1',
-    title: 'Funny Cats',
-    url: '',
-    thumbnail: '',
-  },
-  {
-    id: '2',
-    title: 'Action Sports',
-    url: '',
-    thumbnail: '',
-  },
+  { id: '1', title: 'Funny Cats', url: '', thumbnail: '' },
+  { id: '2', title: 'Action Sports', url: '', thumbnail: '' },
 ];
 
 const DEFAULT_SETTINGS: StudioSettings = {
@@ -66,15 +55,14 @@ export default function App() {
   const [micActive, setMicActive] = useState(false);
   const [floatingReactions, setFloatingReactions] = useState<{ id: string; emoji: string; x: number; y: number; scale: number }[]>([]);
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const cameraVideoRef = useRef<HTMLVideoElement>(null);
-  const sourceVideoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const timerIntervalRef = useRef<number | null>(null);
   const mediaUnlockedRef = useRef<boolean>(false);
   const lastProbeRef = useRef<number>(0);
-  const previousBlobUrlRef = useRef<string | null>(null);
   const sourceStatusRef = useRef<{ painting: boolean; message: string }>({ painting: false, message: 'Waiting for video…' });
 
   // Start camera
@@ -98,7 +86,12 @@ export default function App() {
       }
     };
     startCamera();
-    return () => { if (cameraVideoRef.current?.srcObject) cameraVideoRef.current.srcObject.getTracks().forEach((t: any) => t.stop()); };
+    return () => {
+      if (cameraVideoRef.current?.srcObject) {
+        // @ts-ignore
+        cameraVideoRef.current.srcObject.getTracks().forEach((t: any) => t.stop());
+      }
+    };
   }, [settings.cameraFacingMode]);
 
   // Unlock media playback on user gesture
@@ -147,11 +140,9 @@ export default function App() {
       const now = Date.now();
       if (now - lastProbeRef.current > 300) {
         lastProbeRef.current = now;
-        // Simple check: if video has valid dimensions and readyState
         const painting = vid.readyState >= 2 && vid.videoWidth > 0 && vid.videoHeight > 0;
         const message = painting ? 'Painting' : 'Loading video…';
         sourceStatusRef.current = { painting, message };
-        setSourceStatus(sourceStatusRef.current);
       }
       animFrameRef.current = requestAnimationFrame(probeLoop);
     };
@@ -203,9 +194,10 @@ export default function App() {
       setIsRecording(true);
       setIsPaused(false);
 
-      // Start canvas recording
       try {
         const canvas = canvasRef.current;
+        if (!canvas) throw new Error('Canvas not available');
+
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('Could not get canvas context');
 
@@ -219,20 +211,19 @@ export default function App() {
         const mimeType = 'video/webm;codecs=vp8,opus';
         let mediaRecorder: MediaRecorder;
         try {
+          // @ts-ignore - captureStream API
           mediaRecorder = new MediaRecorder(canvas.captureStream(30), { mimeType });
-        } catch (e) {
-          // Fallback if captureStream fails (tainted canvas)
+        } catch (e: any) {
           throw new Error('Canvas is tainted or captureStream not supported. Please use local files or the URL tab.');
         }
 
-        mediaRecorder.ondataavailable = (e) => {
+        mediaRecorder.ondataavailable = (e: any) => {
           if (e.data && e.data.size > 0) {
             const blobUrl = URL.createObjectURL(e.data);
-            // Export the video
-            const takeId = uuidv4();
+            // Create a download link
             const link = document.createElement('a');
             link.href = blobUrl;
-            link.download = `reaction-${takeId}.webm`;
+            link.download = `reaction-${Date.now()}.webm`;
             link.click();
             URL.revokeObjectURL(blobUrl);
           }
@@ -245,29 +236,30 @@ export default function App() {
         }, 5000); // Record for 5 seconds
       } catch (err: any) {
         console.error('Recording error:', err);
-        setIsRecording(false);
         setCameraError(err.message || 'Recording failed');
+        setIsRecording(false);
+        setIsPaused(false);
       }
     }, 3000); // 3 second countdown
   }, [settings.sourceVolume]);
 
   // Pause/Resume
-  const handlePause = () => {
+  const handlePause = useCallback(() => {
     setIsPaused(!isPaused);
     if (sourceVideoRef.current) {
-      sourceVideoRef.current.paused = !isPaused;
+      sourceVideoRef.current.pause();
     }
-  };
+  }, [isPaused]);
 
   // Stop recording
-  const handleStop = () => {
+  const handleStop = useCallback(() => {
     setIsRecording(false);
     setIsPaused(false);
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
-  };
+  }, []);
 
   // Render
   const canvasStyle = {
@@ -284,9 +276,9 @@ export default function App() {
       <div className="mb-4">
         <label className="font-medium mb-2 block">Select Video:</label>
         <select
-          onChange={(e) => {
+          onChange={(e: any) => {
             const videoId = e.target.value;
-            const video = SAMPLE_VIDEOS.find((v) => v.id === videoId);
+            const video = SAMPLE_VIDEOS.find((v: any) => v.id === videoId);
             if (video) {
               setSelectedVideo(video);
               if (sourceVideoRef.current) {
@@ -297,7 +289,7 @@ export default function App() {
           }}
         >
           <option value="">-- No video --</option>
-          {SAMPLE_VIDEOS.map((v) => (
+          {SAMPLE_VIDEOS.map((v: any) => (
             <option key={v.id} value={v.id}>
               {v.title}
             </option>
